@@ -6,6 +6,7 @@ version = 4
 name = "act_mcp_server"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum 0.7.9",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -702,6 +703,8 @@ dependencies = [
  "percent-encoding",
  "rand",
  "thiserror",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
