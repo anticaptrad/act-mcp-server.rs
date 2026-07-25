@@ -5,6 +5,8 @@
 pub struct Config {
     pub port: u16,
     pub service_name: String,
+    /// Shared secret guarding the MCP surface.
+    pub auth_secret: Option<String>,
 }
 
 impl Config {
@@ -17,6 +19,14 @@ impl Config {
         let service_name =
             std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "act-mcp-server".to_string());
 
-        Self { port, service_name }
+        let auth_secret = std::env::var("SERVER_AUTH_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty());
+
+        Self {
+            port,
+            service_name,
+            auth_secret,
+        }
     }
 }

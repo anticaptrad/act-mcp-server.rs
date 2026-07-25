@@ -3,9 +3,11 @@
 //! Exposes an HTTP JSON-RPC MCP endpoint plus k8s health/readiness probes.
 //! Deployed to the cluster at ~/codes/ores/k8s-cluster.
 
+mod auth;
 mod config;
 mod mcp;
 mod routes;
+mod state;
 mod telemetry;
 
 use std::net::SocketAddr;
@@ -16,7 +18,13 @@ async fn main() -> anyhow::Result<()> {
     let cfg = config::Config::from_env();
     telemetry::init(&cfg.service_name)?;
 
-    let app = routes::router();
+    if cfg.auth_secret.is_none() {
+        tracing::warn!("SERVER_AUTH_SECRET not set; /mcp will reject every request");
+    }
+
+    let app = routes::router(state::AppState {
+        auth_secret: cfg.auth_secret.clone(),
+    });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
