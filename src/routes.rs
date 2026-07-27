@@ -10,12 +10,13 @@ use crate::state::AppState;
 pub fn router(state: AppState) -> Router {
     // The MCP surface is tool execution, so it sits behind the shared secret.
     // Probes stay public — the kubelet sends no headers.
-    let protected = Router::new()
-        .route("/mcp", post(mcp::handle))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::require_server_auth,
-        ));
+    let protected =
+        Router::new()
+            .route("/mcp", post(mcp::handle))
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth::require_server_auth,
+            ));
 
     Router::new()
         .route("/health", get(health))
