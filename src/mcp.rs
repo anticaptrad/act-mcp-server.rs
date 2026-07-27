@@ -84,7 +84,10 @@ fn dispatch(req: &JsonRpcRequest) -> Value {
 
 fn call_tool(id: Option<Value>, params: &Value) -> Value {
     let name = params.get("name").and_then(Value::as_str);
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
 
     match name {
         Some("ping") => {
