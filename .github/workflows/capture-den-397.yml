@@ -24,19 +24,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: "1.97.0"
-          components: clippy
-      - name: Capture clippy diagnostic
+          components: rustfmt, clippy
+      - name: Format and capture clippy diagnostic
         shell: bash
         run: |
+          cargo fmt --all
           set +e
           cargo clippy --locked --all-targets --message-format=short -- -D warnings > .den-397-validation.txt 2>&1
           status=$?
           printf '\nclippy_status=%s\n' "$status" >> .den-397-validation.txt
           exit 0
-      - name: Commit diagnostic
+      - name: Commit formatted source and diagnostic
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .den-397-validation.txt
-          git commit -m 'chore: capture AntiCapTrad flags validation'
+          git add src .den-397-validation.txt
+          git commit -m 'style: format AntiCapTrad flags integration'
           git push origin HEAD:feat/den-397-flags2env
