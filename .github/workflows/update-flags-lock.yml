@@ -1,0 +1,40 @@
+name: Update flags2env lockfile (temporary)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feat/den-397-flags2env' &&
+      github.actor == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt, clippy
+      - name: Refresh lockfile and format
+        run: |
+          cargo update
+          cargo fmt --all
+      - name: Commit normalized candidate
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Cargo.lock src
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: format and lock bundled flags2env runtime'
+            git push origin HEAD:feat/den-397-flags2env
+          fi
