@@ -6,12 +6,10 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::Resource;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-pub fn init(service_name: &str) -> anyhow::Result<()> {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,act_mcp_server=debug"));
+pub fn init(service_name: &str, filter: EnvFilter) -> anyhow::Result<()> {
     let registry = tracing_subscriber::registry()
         .with(filter)
-        .with(tracing_subscriber::fmt::layer());
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr));
 
     match std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
         Ok(endpoint) if !endpoint.is_empty() => {
