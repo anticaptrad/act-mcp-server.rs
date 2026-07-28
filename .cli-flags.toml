@@ -1,0 +1,27 @@
+# Only non-secret process controls are exposed as CLI flags. Authentication and
+# OpenTelemetry exporter configuration remain environment-only.
+
+[help]
+url = "https://github.com/anticaptrad/act-mcp-server.rs#configuration"
+columns = ["options", "env", "type", "default", "description"]
+
+[parse]
+allow_unknown = false
+
+[env]
+ignore = ["SERVER_AUTH_SECRET", "OTEL_SERVICE_NAME", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_RESOURCE_ATTRIBUTES"]
+
+[flags.port]
+env = "PORT"
+aliases = ["port"]
+short = "p"
+type = "integer"
+default = 8080
+help = "HTTP port for the MCP JSON-RPC and health endpoints."
+
+[flags.log-filter]
+env = "RUST_LOG"
+aliases = ["log-filter"]
+type = "string"
+default = "info,act_mcp_server=debug"
+help = "Tracing filter for stderr console logs."

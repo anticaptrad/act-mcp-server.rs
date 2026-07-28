@@ -24,7 +24,7 @@ jobs:
       - name: Validate GitHub Actions
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
-          args: .github/workflows/ci.yml
+          args: .github/workflows/ci.yml .github/workflows/cli-flags.yml
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: "1.97.0"
@@ -38,6 +38,25 @@ jobs:
         run: cargo test --locked --all-targets
       - name: Release build
         run: cargo build --locked --release
+      - name: Build final non-root image
+        run: docker build --tag "act-mcp:${GITHUB_SHA}" .
+      - name: Verify final image contract and static parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="act-mcp:${GITHUB_SHA}"
+          docker run --rm --entrypoint sh "$image" -ec '
+            test -f /app/.cli-flags.toml
+            ! ldd /usr/local/bin/act-mcp-server | grep -qi flags2env
+          '
+          set +e
+          output="$(docker run --rm "$image" --server-auth-secret=must-remain-environment-only 2>&1)"
+          status=$?
+          set -e
+          if [[ "$status" -eq 0 ]] || ! grep -q 'unknown command-line option' <<<"$output"; then
+            printf 'Expected secret-bearing flag rejection; status=%s output=%s\n' "$status" "$output" >&2
+            exit 1
+          fi
       - uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
         with:
           tool: cargo-audit@0.22.2

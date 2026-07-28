@@ -20,6 +20,7 @@ USER 10001
 
 WORKDIR /app
 COPY --from=builder /usr/src/app/target/release/act_mcp_server /usr/local/bin/act-mcp-server
+COPY .cli-flags.toml /app/.cli-flags.toml
 
 ENV PORT=8080
 EXPOSE 8080

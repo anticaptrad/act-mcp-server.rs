@@ -1,0 +1,53 @@
+name: CLI flags contract
+
+on:
+  pull_request:
+    paths:
+      - ".cli-flags.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/startup.rs"
+      - ".github/workflows/cli-flags.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".cli-flags.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/startup.rs"
+      - ".github/workflows/cli-flags.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: consumer
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: ORESoftware/flags-2-env
+          ref: 377bff1a4e7424eb98377997a232ddc0fc700f59
+          path: flags2env
+      - name: Build exact parser and audit contract
+        run: |
+          make -C flags2env cli
+          flags2env/build/flags2env audit consumer/.cli-flags.toml
+      - name: Verify immutable Rust pin and secret boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd consumer
+          grep -F 'flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git", rev = "377bff1a4e7424eb98377997a232ddc0fc700f59" }' Cargo.toml
+          grep -F '377bff1a4e7424eb98377997a232ddc0fc700f59' Cargo.lock
+          if grep -Eq '^[[:space:]]*env[[:space:]]*=[[:space:]]*"(SERVER_AUTH_SECRET|OTEL_EXPORTER_OTLP_ENDPOINT|OTEL_EXPORTER_OTLP_HEADERS|OTEL_RESOURCE_ATTRIBUTES)"' .cli-flags.toml; then
+            echo 'secret-bearing or exporter configuration must remain environment-only' >&2
+            exit 1
+          fi

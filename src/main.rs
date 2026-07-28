@@ -7,6 +7,7 @@ mod auth;
 mod config;
 mod mcp;
 mod routes;
+mod startup;
 mod state;
 mod telemetry;
 
@@ -15,8 +16,10 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let cfg = config::Config::from_env();
-    telemetry::init(&cfg.service_name)?;
+    let startup =
+        startup::process_startup_flags().map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let cfg = config::Config::from_env_with_port(Some(startup.port));
+    telemetry::init(&cfg.service_name, startup.log_filter)?;
 
     if cfg.auth_secret.is_none() {
         tracing::warn!("SERVER_AUTH_SECRET not set; /mcp will reject every request");
