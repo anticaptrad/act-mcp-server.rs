@@ -16,8 +16,8 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let startup = startup::process_startup_flags()
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let startup =
+        startup::process_startup_flags().map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let cfg = config::Config::from_env_with_port(Some(startup.port));
     telemetry::init(&cfg.service_name, startup.log_filter)?;
 
