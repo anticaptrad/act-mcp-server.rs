@@ -10,10 +10,6 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Self {
-        Self::from_env_with_port(None)
-    }
-
     pub fn from_env_with_port(port_override: Option<u16>) -> Self {
         let port = port_override.unwrap_or_else(|| {
             std::env::var("PORT")
