@@ -92,9 +92,7 @@ pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
         if path.is_file() {
             return Ok(path);
         }
-        return Err(
-            invalid_input("ACT_MCP_FLAGS_CONFIG does not point to a readable file").into(),
-        );
+        return Err(invalid_input("ACT_MCP_FLAGS_CONFIG does not point to a readable file").into());
     }
 
     let mut candidates = Vec::new();
@@ -112,10 +110,8 @@ pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
         .into_iter()
         .find(|candidate| candidate.is_file())
         .ok_or_else(|| {
-            invalid_input(
-                "cannot locate .cli-flags.toml; set ACT_MCP_FLAGS_CONFIG to its path",
-            )
-            .into()
+            invalid_input("cannot locate .cli-flags.toml; set ACT_MCP_FLAGS_CONFIG to its path")
+                .into()
         })
 }
 
