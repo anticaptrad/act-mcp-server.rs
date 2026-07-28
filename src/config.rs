@@ -11,10 +11,16 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Self {
-        let port = std::env::var("PORT")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(8080);
+        Self::from_env_with_port(None)
+    }
+
+    pub fn from_env_with_port(port_override: Option<u16>) -> Self {
+        let port = port_override.unwrap_or_else(|| {
+            std::env::var("PORT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(8080)
+        });
 
         let service_name =
             std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "act-mcp-server".to_string());
@@ -28,5 +34,16 @@ impl Config {
             service_name,
             auth_secret,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_port_override_wins_without_exposing_secrets() {
+        let config = Config::from_env_with_port(Some(9191));
+        assert_eq!(config.port, 9191);
     }
 }
