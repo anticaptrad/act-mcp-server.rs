@@ -99,11 +99,11 @@ pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
     if let Ok(current) = std::env::current_dir() {
         candidates.push(current.join(".cli-flags.toml"));
     }
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(parent) = executable.parent() {
-            candidates.push(parent.join(".cli-flags.toml"));
-            candidates.push(parent.join("../share/act-mcp-server/.cli-flags.toml"));
-        }
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(parent) = executable.parent()
+    {
+        candidates.push(parent.join(".cli-flags.toml"));
+        candidates.push(parent.join("../share/act-mcp-server/.cli-flags.toml"));
     }
 
     candidates
