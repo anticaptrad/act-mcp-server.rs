@@ -71,7 +71,11 @@ mod tests {
         let app = router(test_state());
         let health = app
             .clone()
-            .oneshot(Request::get("/health").body(Body::empty()).expect("request"))
+            .oneshot(
+                Request::get("/health")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
             .await
             .expect("response");
         assert_eq!(health.status(), StatusCode::OK);

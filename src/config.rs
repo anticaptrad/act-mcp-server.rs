@@ -41,9 +41,8 @@ impl Config {
             bail!("SERVER_AUTH_SECRET must be at least {MIN_AUTH_SECRET_BYTES} bytes");
         }
 
-        let allowed_origins = parse_allowed_origins(
-            &std::env::var("MCP_ALLOWED_ORIGINS").unwrap_or_default(),
-        )?;
+        let allowed_origins =
+            parse_allowed_origins(&std::env::var("MCP_ALLOWED_ORIGINS").unwrap_or_default())?;
 
         Ok(Self {
             port,
@@ -75,7 +74,11 @@ pub(crate) fn normalize_origin(raw: &str) -> Option<String> {
 
 fn parse_allowed_origins(raw: &str) -> anyhow::Result<BTreeSet<String>> {
     let mut origins = BTreeSet::new();
-    for candidate in raw.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for candidate in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if candidate == "*" {
             bail!("MCP_ALLOWED_ORIGINS must not contain '*'");
         }

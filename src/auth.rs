@@ -86,8 +86,14 @@ mod tests {
 
     #[test]
     fn secret_comparison_accepts_only_exact_values() {
-        assert!(secrets_match("correct horse battery staple", "correct horse battery staple"));
-        assert!(!secrets_match("correct horse battery staple", "correct horse battery staplf"));
+        assert!(secrets_match(
+            "correct horse battery staple",
+            "correct horse battery staple"
+        ));
+        assert!(!secrets_match(
+            "correct horse battery staple",
+            "correct horse battery staplf"
+        ));
         assert!(!secrets_match("short", "correct horse battery staple"));
     }
 

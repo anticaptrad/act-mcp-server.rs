@@ -16,8 +16,7 @@ use serde_json::{Value, json};
 
 /// Newest protocol revision this server implements.
 const PROTOCOL_VERSION: &str = "2025-11-25";
-const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
-    &["2025-03-26", "2025-06-18", PROTOCOL_VERSION];
+const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-03-26", "2025-06-18", PROTOCOL_VERSION];
 const PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 pub(crate) const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_PING_MESSAGE_BYTES: usize = 1_024;
@@ -27,17 +26,12 @@ const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum RpcId {
+    #[default]
     Missing,
     Valid(Value),
     Invalid,
-}
-
-impl Default for RpcId {
-    fn default() -> Self {
-        Self::Missing
-    }
 }
 
 impl RpcId {
@@ -127,7 +121,11 @@ pub async fn handle(headers: HeaderMap, Json(req): Json<JsonRpcRequest>) -> Resp
     if req.jsonrpc.as_deref() != Some("2.0") {
         return rpc_response(
             StatusCode::BAD_REQUEST,
-            err(req.id.error_id(), INVALID_REQUEST, "invalid JSON-RPC version"),
+            err(
+                req.id.error_id(),
+                INVALID_REQUEST,
+                "invalid JSON-RPC version",
+            ),
         );
     }
     if !protocol_header_supported(&headers) {
@@ -215,11 +213,7 @@ fn call_tool(id: Value, params: &Value) -> Value {
                 }),
             )
         }
-        unknown => err(
-            id,
-            INVALID_PARAMS,
-            &format!("unknown tool: {unknown}"),
-        ),
+        unknown => err(id, INVALID_PARAMS, &format!("unknown tool: {unknown}")),
     }
 }
 
@@ -247,7 +241,7 @@ fn negotiated_protocol_version(params: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::{Body, to_bytes};
+    use axum::body::to_bytes;
 
     fn parse_request(body: &str) -> JsonRpcRequest {
         serde_json::from_str(body).expect("valid test request")
@@ -307,9 +301,7 @@ mod tests {
         );
         let invalid_protocol = handle(
             headers,
-            Json(parse_request(
-                r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
-            )),
+            Json(parse_request(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#)),
         )
         .await;
         assert_eq!(invalid_protocol.status(), StatusCode::BAD_REQUEST);
@@ -328,7 +320,10 @@ mod tests {
         let value = response_json(response).await;
         assert_eq!(value["id"], "init");
         assert_eq!(value["result"]["protocolVersion"], "2025-06-18");
-        assert_eq!(value["result"]["capabilities"]["tools"]["listChanged"], false);
+        assert_eq!(
+            value["result"]["capabilities"]["tools"]["listChanged"],
+            false
+        );
     }
 
     #[test]
