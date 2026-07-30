@@ -18,7 +18,7 @@ use tokio::signal;
 async fn main() -> anyhow::Result<()> {
     let startup =
         startup::process_startup_flags().map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    let cfg = config::Config::from_env_with_port(Some(startup.port));
+    let cfg = config::Config::from_env_with_port(Some(startup.port))?;
     telemetry::init(&cfg.service_name, startup.log_filter)?;
 
     if cfg.auth_secret.is_none() {
@@ -27,11 +27,17 @@ async fn main() -> anyhow::Result<()> {
 
     let app = routes::router(state::AppState {
         auth_secret: cfg.auth_secret.clone(),
+        allowed_origins: cfg.allowed_origins.clone(),
     });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!(%addr, service = %cfg.service_name, "act-mcp-server listening");
+    tracing::info!(
+        %addr,
+        service = %cfg.service_name,
+        allowed_origin_count = cfg.allowed_origins.len(),
+        "act-mcp-server listening"
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

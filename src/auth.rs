@@ -1,21 +1,25 @@
-//! Shared-secret gate for the MCP surface.
+//! Shared-secret and browser-Origin gate for the MCP surface.
 //!
-//! `tools/call` is remote tool execution. Today the catalog is a health probe,
-//! but an unauthenticated MCP endpoint is a standing invitation to whatever can
-//! reach the Service, and the tools it exposes only ever grow. The cluster's own
-//! MCP servers all sit behind a secret; this matches that posture.
+//! `tools/call` is remote tool execution. Today the catalog is intentionally
+//! tiny, but an unauthenticated MCP endpoint is a standing invitation to every
+//! future tool. Requests therefore fail closed when the shared secret is absent,
+//! compare secrets in constant time, and reject browser origins unless they are
+//! explicitly allowlisted.
 //!
 //! Probes stay public — the kubelet sends no headers.
 
+use std::collections::BTreeSet;
+
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode, header},
     middleware::Next,
     response::Response,
 };
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+use crate::config::normalize_origin;
 use crate::state::AppState;
 
 /// Header carrying the shared secret, matching the platform convention.
@@ -31,7 +35,20 @@ fn secrets_match(presented: &str, expected: &str) -> bool {
     a.ct_eq(&b).into()
 }
 
-/// Reject any MCP request without the configured secret.
+fn origin_allowed(headers: &HeaderMap, allowed_origins: &BTreeSet<String>) -> bool {
+    let Some(raw) = headers.get(header::ORIGIN) else {
+        // Native MCP clients normally send no Origin. The check is specifically
+        // for browser/DNS-rebinding traffic.
+        return true;
+    };
+    let Ok(raw) = raw.to_str() else {
+        return false;
+    };
+    normalize_origin(raw).is_some_and(|origin| allowed_origins.contains(&origin))
+}
+
+/// Reject any MCP request without the configured secret or with an untrusted
+/// browser Origin.
 ///
 /// Fails closed: with no secret configured the endpoint answers 503 rather than
 /// serving. Treating "unconfigured" as "open" is how a tool-execution surface
@@ -55,6 +72,47 @@ pub async fn require_server_auth(
     if !secrets_match(presented, expected) {
         return Err(StatusCode::UNAUTHORIZED);
     }
+    if !origin_allowed(request.headers(), &state.allowed_origins) {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     Ok(next.run(request).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn secret_comparison_accepts_only_exact_values() {
+        assert!(secrets_match(
+            "correct horse battery staple",
+            "correct horse battery staple"
+        ));
+        assert!(!secrets_match(
+            "correct horse battery staple",
+            "correct horse battery staplf"
+        ));
+        assert!(!secrets_match("short", "correct horse battery staple"));
+    }
+
+    #[test]
+    fn origin_gate_allows_native_clients_and_exact_normalized_origins() {
+        let allowed = BTreeSet::from(["https://console.example".to_owned()]);
+        assert!(origin_allowed(&HeaderMap::new(), &allowed));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://console.example/"),
+        );
+        assert!(origin_allowed(&headers, &allowed));
+
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://evil.example"),
+        );
+        assert!(!origin_allowed(&headers, &allowed));
+    }
 }

@@ -17,6 +17,7 @@ dependencies = [
  "sha2",
  "subtle",
  "tokio",
+ "tower 0.5.3",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",

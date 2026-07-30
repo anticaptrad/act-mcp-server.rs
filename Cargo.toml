@@ -20,6 +20,9 @@ flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git", rev = "377
 sha2 = "0.10"
 subtle = "2.6"
 
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
 [profile.release]
 strip = true
 lto = "thin"
