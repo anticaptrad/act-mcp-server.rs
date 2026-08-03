@@ -165,14 +165,18 @@ mod tests {
     #[test]
     fn hosts_are_exact_normalized_and_wildcards_fail_closed() {
         assert_eq!(
-            parse_allowed_hosts("Console.Example:443, localhost:8080")
-                .expect("valid hosts"),
+            parse_allowed_hosts("Console.Example:443, localhost:8080").expect("valid hosts"),
             BTreeSet::from([
                 "console.example:443".to_owned(),
                 "localhost:8080".to_owned(),
             ])
         );
-        for bad in ["*", "https://console.example", "user@console.example", "a b"] {
+        for bad in [
+            "*",
+            "https://console.example",
+            "user@console.example",
+            "a b",
+        ] {
             assert!(parse_allowed_hosts(bad).is_err(), "should reject {bad:?}");
         }
     }
