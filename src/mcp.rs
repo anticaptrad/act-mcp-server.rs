@@ -271,10 +271,12 @@ mod tests {
 
     #[test]
     fn request_envelope_rejects_unknown_top_level_fields() {
-        assert!(serde_json::from_str::<JsonRpcRequest>(
-            r#"{"jsonrpc":"2.0","id":1,"method":"ping","extra":true}"#
-        )
-        .is_err());
+        assert!(
+            serde_json::from_str::<JsonRpcRequest>(
+                r#"{"jsonrpc":"2.0","id":1,"method":"ping","extra":true}"#
+            )
+            .is_err()
+        );
     }
 
     #[tokio::test]
