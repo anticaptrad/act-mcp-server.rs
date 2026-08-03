@@ -27,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = routes::router(state::AppState {
         auth_secret: cfg.auth_secret.clone(),
+        allowed_hosts: cfg.allowed_hosts.clone(),
         allowed_origins: cfg.allowed_origins.clone(),
     });
 
@@ -35,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(
         %addr,
         service = %cfg.service_name,
+        allowed_host_count = cfg.allowed_hosts.len(),
         allowed_origin_count = cfg.allowed_origins.len(),
         "act-mcp-server listening"
     );
@@ -50,17 +52,22 @@ async fn main() -> anyhow::Result<()> {
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl-C handler");
+        if let Err(error) = signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install or receive Ctrl-C signal");
+        }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to install SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
     };
 
     #[cfg(not(unix))]
