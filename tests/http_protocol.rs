@@ -97,7 +97,10 @@ fn real_http_process_enforces_host_auth_schema_and_security_headers() {
         None,
         r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#,
     );
-    assert!(missing_secret.starts_with("HTTP/1.1 401"), "{missing_secret}");
+    assert!(
+        missing_secret.starts_with("HTTP/1.1 401"),
+        "{missing_secret}"
+    );
 
     let unknown_argument = request(
         port,
