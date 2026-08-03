@@ -1,0 +1,31 @@
+[package]
+org = "anticaptrad"
+name = "act-mcp-server"
+version = "0.1.0"
+description = "Private stdio MCP operations server for Anticapitalist Tradition"
+license = "UNLICENSED"
+keywords = ["mcp", "stdio", "youtube", "agents", "global-tool"]
+language = "rust"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/anticaptrad/act-mcp-server.rs"
+
+[build]
+command = "cargo build --release --locked --bin act_mcp_server"
+outputs = ["target/release/act_mcp_server"]
+
+[bin]
+act-mcp-server = "target/release/act_mcp_server"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "cargo test --manifest-path \"$ZED_PKG_TEST_TARGET/Cargo.toml\" --all-targets --locked && test -x \"$ZED_PKG_TEST_TARGET/target/release/act_mcp_server\""
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "target/**", "tmp/**", "**/*.log", ".DS_Store"]
+
+[install]
+adapter = "none"
+
+[scripts]
+test = "cargo test --all-targets --locked"
