@@ -2,8 +2,10 @@
 
 use axum::{
     Json, Router,
-    extract::DefaultBodyLimit,
-    middleware,
+    extract::{DefaultBodyLimit, Request},
+    http::{HeaderValue, header},
+    middleware::{self, Next},
+    response::Response,
     routing::{get, post},
 };
 use serde_json::{Value, json};
@@ -13,8 +15,9 @@ use crate::mcp;
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router {
-    // The MCP surface is tool execution, so it sits behind the shared secret and
-    // Origin gate. Probes stay public because the kubelet sends no auth headers.
+    // The MCP surface is tool execution, so it sits behind the shared secret,
+    // exact Host, and browser Origin gate. Probes stay public because the
+    // kubelet sends no auth headers.
     let protected = Router::new()
         .route("/mcp", post(mcp::handle))
         .layer(DefaultBodyLimit::max(mcp::MAX_REQUEST_BYTES))
@@ -28,6 +31,27 @@ pub fn router(state: AppState) -> Router {
         .route("/ready", get(ready))
         .merge(protected)
         .with_state(state)
+        .layer(middleware::from_fn(add_security_headers))
+}
+
+async fn add_security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    response.headers_mut().insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    response.headers_mut().insert(
+        "content-security-policy",
+        HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"),
+    );
+    response
 }
 
 async fn health() -> Json<Value> {
@@ -50,24 +74,40 @@ mod tests {
     use tower::ServiceExt;
 
     const SECRET: &str = "012345678901234567890123";
+    const HOST: &str = "act-mcp-server:8080";
 
     fn test_state() -> AppState {
         AppState {
             auth_secret: Some(SECRET.to_owned()),
+            allowed_hosts: BTreeSet::from([HOST.to_owned()]),
             allowed_origins: BTreeSet::from(["https://console.example".to_owned()]),
         }
     }
 
     fn mcp_request(body: &str) -> Request<Body> {
         Request::post("/mcp")
+            .header(header::HOST, HOST)
             .header(header::CONTENT_TYPE, "application/json")
             .header("x-server-auth", SECRET)
             .body(Body::from(body.to_owned()))
             .expect("request")
     }
 
+    fn assert_security_headers(response: &Response) {
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+        assert_eq!(response.headers()[header::REFERRER_POLICY], "no-referrer");
+        assert_eq!(
+            response.headers()["content-security-policy"],
+            "default-src 'none'; frame-ancestors 'none'"
+        );
+    }
+
     #[tokio::test]
-    async fn probes_are_public_but_mcp_requires_the_shared_secret() {
+    async fn probes_are_public_but_mcp_requires_host_and_shared_secret() {
         let app = router(test_state());
         let health = app
             .clone()
@@ -79,10 +119,26 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(health.status(), StatusCode::OK);
+        assert_security_headers(&health);
+
+        let missing_host = app
+            .clone()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header("x-server-auth", SECRET)
+                    .body(Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(missing_host.status(), StatusCode::MISDIRECTED_REQUEST);
+        assert_security_headers(&missing_host);
 
         let unauthorized = app
             .oneshot(
                 Request::post("/mcp")
+                    .header(header::HOST, HOST)
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#))
                     .expect("request"),
@@ -90,15 +146,31 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+        assert_security_headers(&unauthorized);
     }
 
     #[tokio::test]
-    async fn browser_origins_are_fail_closed_and_explicitly_allowlisted() {
+    async fn host_lookalikes_and_browser_origins_fail_closed() {
         let app = router(test_state());
+        let wrong_host = app
+            .clone()
+            .oneshot(
+                Request::post("/mcp")
+                    .header(header::HOST, "act-mcp-server.attacker:8080")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header("x-server-auth", SECRET)
+                    .body(Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(wrong_host.status(), StatusCode::MISDIRECTED_REQUEST);
+
         let rejected = app
             .clone()
             .oneshot(
                 Request::post("/mcp")
+                    .header(header::HOST, HOST)
                     .header(header::CONTENT_TYPE, "application/json")
                     .header("x-server-auth", SECRET)
                     .header(header::ORIGIN, "https://evil.example")
@@ -112,6 +184,7 @@ mod tests {
         let accepted = app
             .oneshot(
                 Request::post("/mcp")
+                    .header(header::HOST, HOST)
                     .header(header::CONTENT_TYPE, "application/json")
                     .header("x-server-auth", SECRET)
                     .header(header::ORIGIN, "https://console.example/")
@@ -121,6 +194,7 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(accepted.status(), StatusCode::OK);
+        assert_security_headers(&accepted);
     }
 
     #[tokio::test]
@@ -134,6 +208,7 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
+        assert_security_headers(&response);
         let bytes = to_bytes(response.into_body(), mcp::MAX_REQUEST_BYTES)
             .await
             .expect("body");
@@ -147,6 +222,7 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(notification.status(), StatusCode::ACCEPTED);
+        assert_security_headers(&notification);
         let bytes = to_bytes(notification.into_body(), mcp::MAX_REQUEST_BYTES)
             .await
             .expect("body");
@@ -164,5 +240,6 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_security_headers(&response);
     }
 }

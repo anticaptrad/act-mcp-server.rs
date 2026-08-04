@@ -1,10 +1,9 @@
 //! Bounded Model Context Protocol endpoint over JSON-RPC 2.0 and HTTP POST.
 //!
-//! The server implements the handshake and tool primitives required for a
-//! Streamable HTTP MCP client: `initialize`, `ping`, `tools/list`, and
-//! `tools/call`. Notifications are accepted without a response body, request
-//! identifiers are restricted to JSON strings or integers, and the optional
-//! `MCP-Protocol-Version` header is validated after initialization.
+//! This repository currently carries a reviewed custom compatibility endpoint.
+//! It implements the stable initialization and tool primitives required by its
+//! deployed clients while the breaking `rmcp` 3.x migration is handled as a
+//! separate, explicit lifecycle change.
 
 use axum::{
     Json,
@@ -12,9 +11,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Deserializer};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-/// Newest protocol revision this server implements.
+/// Newest stable protocol revision this compatibility endpoint implements.
 const PROTOCOL_VERSION: &str = "2025-11-25";
 const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-03-26", "2025-06-18", PROTOCOL_VERSION];
 const PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
@@ -62,6 +61,7 @@ impl<'de> Deserialize<'de> for RpcId {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct JsonRpcRequest {
     #[serde(default)]
     jsonrpc: Option<String>,
@@ -169,7 +169,7 @@ fn dispatch(id: Value, method: &str, params: &Value) -> Value {
                     "title": "AntiCapTrad MCP Server",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "instructions": "Use the bounded, read-only ACT tool surface. Browser callers must use an explicitly allowlisted Origin."
+                "instructions": "Use the bounded, read-only ACT tool surface. HTTP requests require an exact Host and shared secret; browser callers also require an explicitly allowlisted Origin."
             }),
         ),
         "ping" => ok(id, json!({})),
@@ -182,10 +182,17 @@ fn dispatch(id: Value, method: &str, params: &Value) -> Value {
     }
 }
 
+fn only_keys(object: &Map<String, Value>, allowed: &[&str]) -> bool {
+    object.keys().all(|key| allowed.contains(&key.as_str()))
+}
+
 fn call_tool(id: Value, params: &Value) -> Value {
     let Some(object) = params.as_object() else {
         return err(id, INVALID_PARAMS, "tools/call params must be an object");
     };
+    if !only_keys(object, &["name", "arguments"]) {
+        return err(id, INVALID_PARAMS, "tools/call contains unknown fields");
+    }
     let Some(name) = object.get("name").and_then(Value::as_str) else {
         return err(id, INVALID_PARAMS, "missing tool name");
     };
@@ -195,26 +202,34 @@ fn call_tool(id: Value, params: &Value) -> Value {
     }
 
     match name {
-        "ping" => {
-            let message = arguments
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("pong");
-            if message.len() > MAX_PING_MESSAGE_BYTES || message.chars().any(char::is_control) {
-                return err(id, INVALID_PARAMS, "ping message is invalid or too long");
-            }
-            let structured = json!({"message": message});
-            ok(
-                id,
-                json!({
-                    "content": [{"type": "text", "text": message}],
-                    "structuredContent": structured,
-                    "isError": false
-                }),
-            )
-        }
-        unknown => err(id, INVALID_PARAMS, &format!("unknown tool: {unknown}")),
+        "ping" => call_ping(id, arguments),
+        _ => err(id, INVALID_PARAMS, "unknown tool"),
     }
+}
+
+fn call_ping(id: Value, arguments: &Value) -> Value {
+    let empty = Map::new();
+    let object = arguments.as_object().unwrap_or(&empty);
+    if !only_keys(object, &["message"]) {
+        return err(id, INVALID_PARAMS, "ping contains unknown arguments");
+    }
+    let message = match object.get("message") {
+        None => "pong",
+        Some(Value::String(message)) => message,
+        Some(_) => return err(id, INVALID_PARAMS, "ping message must be a string"),
+    };
+    if message.len() > MAX_PING_MESSAGE_BYTES || message.chars().any(char::is_control) {
+        return err(id, INVALID_PARAMS, "ping message is invalid or too long");
+    }
+    let structured = json!({"message": message});
+    ok(
+        id,
+        json!({
+            "content": [{"type": "text", "text": message}],
+            "structuredContent": structured,
+            "isError": false
+        }),
+    )
 }
 
 fn protocol_header_supported(headers: &HeaderMap) -> bool {
@@ -252,6 +267,16 @@ mod tests {
             .await
             .expect("response body");
         serde_json::from_slice(&bytes).expect("JSON-RPC response")
+    }
+
+    #[test]
+    fn request_envelope_rejects_unknown_top_level_fields() {
+        assert!(
+            serde_json::from_str::<JsonRpcRequest>(
+                r#"{"jsonrpc":"2.0","id":1,"method":"ping","extra":true}"#
+            )
+            .is_err()
+        );
     }
 
     #[tokio::test]
@@ -341,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn ping_tool_returns_structured_content_and_rejects_unbounded_messages() {
+    fn ping_tool_returns_structured_content_and_rejects_schema_drift() {
         let result = call_tool(
             json!(7),
             &json!({"name": "ping", "arguments": {"message": "hello"}}),
@@ -349,23 +374,43 @@ mod tests {
         assert_eq!(result["result"]["structuredContent"]["message"], "hello");
         assert_eq!(result["result"]["isError"], false);
 
+        for arguments in [
+            json!({"message": 7}),
+            json!({"message": "hello", "unexpected": true}),
+        ] {
+            let error = call_tool(json!(8), &json!({"name": "ping", "arguments": arguments}));
+            assert_eq!(error["error"]["code"], INVALID_PARAMS);
+        }
+
         let too_long = "x".repeat(MAX_PING_MESSAGE_BYTES + 1);
         let error = call_tool(
-            json!(8),
+            json!(9),
             &json!({"name": "ping", "arguments": {"message": too_long}}),
         );
         assert_eq!(error["error"]["code"], INVALID_PARAMS);
     }
 
     #[test]
-    fn unknown_methods_and_tools_are_typed_errors() {
+    fn tools_call_rejects_unknown_envelope_fields_and_does_not_reflect_names() {
+        let extra = call_tool(
+            json!(1),
+            &json!({"name": "ping", "arguments": {}, "extra": true}),
+        );
+        assert_eq!(extra["error"]["code"], INVALID_PARAMS);
+
+        let unknown = call_tool(
+            json!(2),
+            &json!({"name": "secret-looking-tool-name", "arguments": {}}),
+        );
+        assert_eq!(unknown["error"]["message"], "unknown tool");
+        assert!(!unknown.to_string().contains("secret-looking-tool-name"));
+    }
+
+    #[test]
+    fn unknown_methods_are_typed_errors() {
         assert_eq!(
             dispatch(json!(1), "unknown/method", &json!({}))["error"]["code"],
             METHOD_NOT_FOUND
-        );
-        assert_eq!(
-            call_tool(json!(2), &json!({"name": "unknown", "arguments": {}}))["error"]["code"],
-            INVALID_PARAMS
         );
     }
 }

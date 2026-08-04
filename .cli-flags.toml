@@ -6,7 +6,10 @@ url = "https://github.com/anticaptrad/act-mcp-server.rs#configuration"
 columns = ["options", "env", "type", "default", "description"]
 
 [parse]
+require_equals = true
 allow_unknown = false
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
 
 [env]
 ignore = ["SERVER_AUTH_SECRET", "OTEL_SERVICE_NAME", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_RESOURCE_ATTRIBUTES"]
@@ -18,6 +21,20 @@ short = "p"
 type = "integer"
 default = 8080
 help = "HTTP port for the MCP JSON-RPC and health endpoints."
+
+[flags.allowed-hosts]
+env = "MCP_ALLOWED_HOSTS"
+aliases = ["allowed-hosts"]
+type = "string"
+default = "localhost,localhost:8080,127.0.0.1,127.0.0.1:8080,[::1],[::1]:8080,act-mcp-server,act-mcp-server:8080"
+help = "Comma-separated exact HTTP Host authorities accepted by the protected MCP endpoint."
+
+[flags.allowed-origins]
+env = "MCP_ALLOWED_ORIGINS"
+aliases = ["allowed-origins"]
+type = "string"
+default = ""
+help = "Comma-separated exact browser origins accepted by the protected MCP endpoint."
 
 [flags.log-filter]
 env = "RUST_LOG"

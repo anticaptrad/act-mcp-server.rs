@@ -15,29 +15,55 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Require committed dependency resolution
+        run: test -f Cargo.lock
       - name: Validate GitHub Actions
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/ci.yml .github/workflows/cli-flags.yml
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
-          toolchain: "1.97.0"
+          toolchain: "1.97.1"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Clippy
+      - name: Strict Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Test
+      - name: Unit, router, and real-process HTTP tests
         run: cargo test --locked --all-targets
+      - name: Documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --no-deps
       - name: Release build
         run: cargo build --locked --release
+      - name: Enforce custom HTTP MCP compatibility boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git grep -q 'MCP_ALLOWED_HOSTS' -- src/config.rs src/auth.rs README.md .env.example .cli-flags.toml
+          git grep -q 'MISDIRECTED_REQUEST' -- src/auth.rs tests/http_protocol.rs
+          git grep -q 'CACHE_CONTROL' -- src/routes.rs
+          git grep -q 'X_CONTENT_TYPE_OPTIONS' -- src/routes.rs
+          git grep -q 'deny_unknown_fields' -- src/mcp.rs
+          git grep -q 'CARGO_BIN_EXE_act_mcp_server' -- tests/http_protocol.rs
+          git grep -q '2025-11-25' -- src/mcp.rs tests/http_protocol.rs
+          if git grep -nE 'SERVER_AUTH_SECRET.*(println|tracing|format!)|x-server-auth.*(println|tracing|format!)' -- src; then
+            echo 'secret-bearing values or headers may be logged or formatted' >&2
+            exit 1
+          fi
+          if git grep -nE '\b(print|println)!\s*\(' -- src; then
+            echo 'stdout application writes are forbidden' >&2
+            exit 1
+          fi
+          git diff --check
       - name: Build final non-root image
         run: docker build --tag "act-mcp:${GITHUB_SHA}" .
       - name: Verify final image contract and static parser
@@ -62,3 +88,17 @@ jobs:
           tool: cargo-audit@0.22.2
       - name: Dependency audit
         run: cargo audit --deny warnings
+
+  msrv:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: "1.88.0"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Minimum supported Rust check
+        run: cargo check --locked --all-targets
