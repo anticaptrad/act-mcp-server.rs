@@ -64,6 +64,15 @@ or Kubernetes Secret/ConfigMap projections. `SERVER_AUTH_SECRET` remains
 excluded from the CLI contract; Host, Origin, port, and log-filter settings are
 non-secret `flags-2-env` options.
 
+## Observability
+
+Diagnostics are structured JSON on stderr. When
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set, OTLP/gRPC exports explicit traces and
+bounded per-tool invocation, error, and latency metrics. Tool arguments,
+results, credentials, and caller-provided method names are never telemetry
+attributes. Collector endpoints reject embedded credentials, query strings,
+metadata/link-local targets, unspecified addresses, and non-HTTP schemes.
+
 ## Run locally
 
 ```sh

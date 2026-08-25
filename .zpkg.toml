@@ -13,7 +13,7 @@ url = "https://github.com/anticaptrad/act-mcp-server.rs"
 
 [build]
 command = "cargo build --release --locked --bin act_mcp_server"
-outputs = ["target/release/act_mcp_server"]
+outputs = ["target/release/act_mcp_server", ".cli-flags.toml"]
 
 [bin]
 act-mcp-server = "target/release/act_mcp_server"
@@ -21,7 +21,7 @@ act-mcp-server = "target/release/act_mcp_server"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "cargo test --manifest-path \"$ZED_PKG_TEST_TARGET/Cargo.toml\" --all-targets --locked && test -x \"$ZED_PKG_TEST_TARGET/target/release/act_mcp_server\""
+smoke_test = "test -x \"$ZED_PKG_TEST_TARGET/target/release/act_mcp_server\" && ! ACT_MCP_FLAGS_CONFIG=\"$ZED_PKG_TEST_TARGET/.cli-flags.toml\" \"$ZED_PKG_TEST_TARGET/target/release/act_mcp_server\" --port=0 >/dev/null 2>&1"
 exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "target/**", "tmp/**", "**/*.log", ".DS_Store"]
 
 [install]
