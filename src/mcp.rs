@@ -12,6 +12,9 @@ use axum::{
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value, json};
+use std::time::Instant;
+
+use crate::telemetry;
 
 /// Newest stable protocol revision this compatibility endpoint implements.
 const PROTOCOL_VERSION: &str = "2025-11-25";
@@ -175,8 +178,8 @@ fn dispatch(id: Value, method: &str, params: &Value) -> Value {
         "ping" => ok(id, json!({})),
         "tools/list" => ok(id, json!({"tools": tool_catalog()})),
         "tools/call" => call_tool(id, params),
-        other => {
-            tracing::debug!(method = other, "unknown MCP method");
+        _ => {
+            tracing::debug!("unknown MCP method");
             err(id, METHOD_NOT_FOUND, "method not found")
         }
     }
@@ -202,7 +205,19 @@ fn call_tool(id: Value, params: &Value) -> Value {
     }
 
     match name {
-        "ping" => call_ping(id, arguments),
+        "ping" => {
+            let started = Instant::now();
+            let span = tracing::info_span!("mcp.tool.call", mcp.tool.name = "ping");
+            let _entered = span.enter();
+            let response = call_ping(id, arguments);
+            let outcome = if response.get("error").is_some() {
+                "error"
+            } else {
+                "ok"
+            };
+            telemetry::record_tool_call("health", outcome, started.elapsed());
+            response
+        }
         _ => err(id, INVALID_PARAMS, "unknown tool"),
     }
 }
