@@ -1,3 +1,7 @@
+[identity]
+service = "act-mcp-server"
+type_name = "McpEnv"
+
 # Only non-secret process controls are exposed as CLI flags. Authentication and
 # OpenTelemetry exporter configuration remain environment-only.
 

@@ -3,6 +3,11 @@
 //! Exposes an HTTP JSON-RPC MCP endpoint plus k8s health/readiness probes.
 //! Deployed to the cluster at ~/codes/ores/k8s-cluster.
 
+#[path = "../generated/rust/env.rs"]
+mod env;
+#[path = "../generated/rust/runtime.rs"]
+mod env_runtime;
+
 mod auth;
 mod config;
 mod mcp;
@@ -16,6 +21,8 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let env_values = env_runtime::load_from_os();
+    let _ = &env_values;
     let startup =
         startup::process_startup_flags().map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let cfg = config::Config::from_env_with_port(Some(startup.port))?;
