@@ -23,31 +23,27 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env_with_port(port_override: Option<u16>) -> anyhow::Result<Self> {
-        let port = match port_override {
-            Some(port) => port,
-            None => std::env::var("PORT")
-                .ok()
-                .map(|value| value.parse().context("PORT must be a valid u16"))
-                .transpose()?
-                .unwrap_or(8080),
-        };
+    pub fn from_env_map(env: &crate::env_map::EnvMap) -> anyhow::Result<Self> {
+        let port = crate::env_map::env_value(env, "PORT")
+            .map(|value| value.parse().context("PORT must be a valid u16"))
+            .transpose()?
+            .unwrap_or(8080);
 
-        let service_name =
-            std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "act-mcp-server".to_string());
+        let service_name = crate::env_map::env_value(env, "OTEL_SERVICE_NAME")
+            .unwrap_or("act-mcp-server")
+            .to_string();
 
-        let auth_secret = std::env::var("SERVER_AUTH_SECRET")
-            .ok()
-            .filter(|value| !value.is_empty())
+        let auth_secret = crate::env_map::env_value(env, "SERVER_AUTH_SECRET")
+            .map(str::to_owned)
             .map(validate_auth_secret)
             .transpose()?;
 
         let allowed_hosts = parse_allowed_hosts(
-            &std::env::var("MCP_ALLOWED_HOSTS")
-                .unwrap_or_else(|_| DEFAULT_ALLOWED_HOSTS.to_owned()),
+            crate::env_map::env_value(env, "MCP_ALLOWED_HOSTS").unwrap_or(DEFAULT_ALLOWED_HOSTS),
         )?;
-        let allowed_origins =
-            parse_allowed_origins(&std::env::var("MCP_ALLOWED_ORIGINS").unwrap_or_default())?;
+        let allowed_origins = parse_allowed_origins(
+            crate::env_map::env_value(env, "MCP_ALLOWED_ORIGINS").unwrap_or(""),
+        )?;
 
         Ok(Self {
             port,
@@ -56,6 +52,15 @@ impl Config {
             allowed_hosts,
             allowed_origins,
         })
+    }
+
+    #[allow(dead_code)]
+    pub fn from_env_with_port(port_override: Option<u16>) -> anyhow::Result<Self> {
+        let mut config = Self::from_env_map(&crate::env_map::process_env_map())?;
+        if let Some(port) = port_override {
+            config.port = port;
+        }
+        Ok(config)
     }
 }
 
