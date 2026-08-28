@@ -21,8 +21,6 @@ use tokio::signal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let env_values = env_runtime::load_from_os();
-    let _ = &env_values;
     let startup =
         startup::process_startup_flags().map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let cfg = config::Config::from_env_with_port(Some(startup.port))?;

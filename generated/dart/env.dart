@@ -4,12 +4,16 @@ final class McpEnv {
   const McpEnv._();
 
   static const String service = 'act-mcp-server';
+  static const String actMcpFlagsConfig = 'ACT_MCP_FLAGS_CONFIG';
   static const String allowedHosts = 'MCP_ALLOWED_HOSTS';
   static const String allowedHostsDefault = 'localhost,localhost:8080,127.0.0.1,127.0.0.1:8080,[::1],[::1]:8080,act-mcp-server,act-mcp-server:8080';
   static const String allowedOrigins = 'MCP_ALLOWED_ORIGINS';
   static const String allowedOriginsDefault = '';
   static const String logFilter = 'RUST_LOG';
   static const String logFilterDefault = 'info,act_mcp_server=debug';
+  static const String otelExporterOtlpEndpoint = 'OTEL_EXPORTER_OTLP_ENDPOINT';
+  static const String otelServiceName = 'OTEL_SERVICE_NAME';
   static const String port = 'PORT';
   static const String portDefault = '8080';
+  static const String serverAuthSecret = 'SERVER_AUTH_SECRET';
 }

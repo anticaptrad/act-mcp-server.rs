@@ -4,20 +4,28 @@ import gleam/option.{type Option, None, Some}
 
 pub type McpEnvValues {
   McpEnvValues(
+    act_mcp_flags_config: Option(String),
     allowed_hosts: String,
     allowed_origins: String,
     log_filter: String,
+    otel_exporter_otlp_endpoint: Option(String),
+    otel_service_name: Option(String),
     port: String,
+    server_auth_secret: Option(String),
   )
 }
 
 /// Pure: resolve values from an explicit lookup.
 pub fn load_from(lookup: fn(String) -> Option(String)) -> McpEnvValues {
   McpEnvValues(
+    act_mcp_flags_config: nonempty(lookup("ACT_MCP_FLAGS_CONFIG")),
     allowed_hosts: nonempty_or(lookup("MCP_ALLOWED_HOSTS"), "localhost,localhost:8080,127.0.0.1,127.0.0.1:8080,[::1],[::1]:8080,act-mcp-server,act-mcp-server:8080"),
     allowed_origins: nonempty_or(lookup("MCP_ALLOWED_ORIGINS"), ""),
     log_filter: nonempty_or(lookup("RUST_LOG"), "info,act_mcp_server=debug"),
+    otel_exporter_otlp_endpoint: nonempty(lookup("OTEL_EXPORTER_OTLP_ENDPOINT")),
+    otel_service_name: nonempty(lookup("OTEL_SERVICE_NAME")),
     port: nonempty_or(lookup("PORT"), "8080"),
+    server_auth_secret: nonempty(lookup("SERVER_AUTH_SECRET")),
   )
 }
 
