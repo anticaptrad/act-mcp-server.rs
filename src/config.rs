@@ -1,9 +1,11 @@
-//! Runtime configuration sourced from the environment (no `.env` loader).
+//! Runtime configuration derived from an immutable environment snapshot.
 
 use std::collections::BTreeSet;
 
 use anyhow::{Context, bail};
 use axum::http::{Uri, uri::Authority};
+
+use crate::env_map::{value, EnvMap};
 
 const MIN_AUTH_SECRET_BYTES: usize = 24;
 const MAX_AUTH_SECRET_BYTES: usize = 4 * 1024;
@@ -14,40 +16,36 @@ const DEFAULT_ALLOWED_HOSTS: &str = "localhost,localhost:8080,127.0.0.1,127.0.0.
 pub struct Config {
     pub port: u16,
     pub service_name: String,
-    /// Shared secret guarding the MCP surface. `None` keeps `/mcp` fail-closed.
     pub auth_secret: Option<String>,
-    /// Exact HTTP Host authorities accepted for MCP requests.
     pub allowed_hosts: BTreeSet<String>,
-    /// Browser origins explicitly permitted to call the Streamable HTTP endpoint.
     pub allowed_origins: BTreeSet<String>,
 }
 
 impl Config {
-    pub fn from_env_with_port(port_override: Option<u16>) -> anyhow::Result<Self> {
+    pub fn from_env_map(env: &EnvMap, port_override: Option<u16>) -> anyhow::Result<Self> {
         let port = match port_override {
             Some(port) => port,
-            None => std::env::var("PORT")
-                .ok()
-                .map(|value| value.parse().context("PORT must be a valid u16"))
+            None => value(env, "PORT")
+                .map(|raw| raw.parse().context("PORT must be a valid u16"))
                 .transpose()?
                 .unwrap_or(8080),
         };
 
-        let service_name =
-            std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "act-mcp-server".to_string());
+        let service_name = value(env, "OTEL_SERVICE_NAME")
+            .unwrap_or("act-mcp-server")
+            .to_owned();
 
-        let auth_secret = std::env::var("SERVER_AUTH_SECRET")
-            .ok()
-            .filter(|value| !value.is_empty())
+        let auth_secret = value(env, "SERVER_AUTH_SECRET")
+            .map(str::to_owned)
             .map(validate_auth_secret)
             .transpose()?;
 
         let allowed_hosts = parse_allowed_hosts(
-            &std::env::var("MCP_ALLOWED_HOSTS")
-                .unwrap_or_else(|_| DEFAULT_ALLOWED_HOSTS.to_owned()),
+            value(env, "MCP_ALLOWED_HOSTS").unwrap_or(DEFAULT_ALLOWED_HOSTS),
         )?;
-        let allowed_origins =
-            parse_allowed_origins(&std::env::var("MCP_ALLOWED_ORIGINS").unwrap_or_default())?;
+        let allowed_origins = parse_allowed_origins(
+            value(env, "MCP_ALLOWED_ORIGINS").unwrap_or_default(),
+        )?;
 
         Ok(Self {
             port,
@@ -86,11 +84,7 @@ pub(crate) fn normalize_host(raw: &str) -> Option<String> {
 
 fn parse_allowed_hosts(raw: &str) -> anyhow::Result<BTreeSet<String>> {
     let mut hosts = BTreeSet::new();
-    for candidate in raw
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    for candidate in raw.split(',').map(str::trim).filter(|value| !value.is_empty()) {
         if candidate == "*" {
             bail!("MCP_ALLOWED_HOSTS must not contain '*'");
         }
@@ -122,11 +116,7 @@ pub(crate) fn normalize_origin(raw: &str) -> Option<String> {
 
 fn parse_allowed_origins(raw: &str) -> anyhow::Result<BTreeSet<String>> {
     let mut origins = BTreeSet::new();
-    for candidate in raw
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    for candidate in raw.split(',').map(str::trim).filter(|value| !value.is_empty()) {
         if candidate == "*" {
             bail!("MCP_ALLOWED_ORIGINS must not contain '*'");
         }
@@ -144,9 +134,13 @@ fn parse_allowed_origins(raw: &str) -> anyhow::Result<BTreeSet<String>> {
 mod tests {
     use super::*;
 
+    fn base_env() -> EnvMap {
+        EnvMap::from([("MCP_ALLOWED_HOSTS".into(), "localhost:8080".into())])
+    }
+
     #[test]
-    fn explicit_port_override_wins_without_exposing_secrets() {
-        let config = Config::from_env_with_port(Some(9191)).expect("valid configuration");
+    fn explicit_port_override_wins_without_process_reads() {
+        let config = Config::from_env_map(&base_env(), Some(9191)).expect("valid configuration");
         assert_eq!(config.port, 9191);
     }
 
@@ -171,12 +165,7 @@ mod tests {
                 "localhost:8080".to_owned(),
             ])
         );
-        for bad in [
-            "*",
-            "https://console.example",
-            "user@console.example",
-            "a b",
-        ] {
+        for bad in ["*", "https://console.example", "user@console.example", "a b"] {
             assert!(parse_allowed_hosts(bad).is_err(), "should reject {bad:?}");
         }
     }
