@@ -46,28 +46,3 @@ aliases = ["log-filter"]
 type = "string"
 default = "info,act_mcp_server=debug"
 help = "Tracing filter for stderr console logs."
-
-
-[flags.act-mcp-flags-config]
-env = "ACT_MCP_FLAGS_CONFIG"
-long = "act-mcp-flags-config"
-type = "string"
-help = "Runtime environment key ACT_MCP_FLAGS_CONFIG."
-
-[flags.otel-exporter-otlp-endpoint]
-env = "OTEL_EXPORTER_OTLP_ENDPOINT"
-long = "otel-exporter-otlp-endpoint"
-type = "string"
-help = "Runtime environment key OTEL_EXPORTER_OTLP_ENDPOINT."
-
-[flags.otel-service-name]
-env = "OTEL_SERVICE_NAME"
-long = "otel-service-name"
-type = "string"
-help = "Runtime environment key OTEL_SERVICE_NAME."
-
-[flags.server-auth-secret]
-env = "SERVER_AUTH_SECRET"
-long = "server-auth-secret"
-type = "string"
-help = "Runtime environment key SERVER_AUTH_SECRET."

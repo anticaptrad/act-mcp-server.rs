@@ -1,9 +1,11 @@
-//! Runtime configuration sourced from the environment (no `.env` loader).
+//! Runtime configuration derived from an immutable environment snapshot.
 
 use std::collections::BTreeSet;
 
 use anyhow::{Context, bail};
 use axum::http::{Uri, uri::Authority};
+
+use crate::env_map::{EnvMap, value};
 
 const MIN_AUTH_SECRET_BYTES: usize = 24;
 const MAX_AUTH_SECRET_BYTES: usize = 4 * 1024;
@@ -14,40 +16,40 @@ const DEFAULT_ALLOWED_HOSTS: &str = "localhost,localhost:8080,127.0.0.1,127.0.0.
 pub struct Config {
     pub port: u16,
     pub service_name: String,
-    /// Shared secret guarding the MCP surface. `None` keeps `/mcp` fail-closed.
     pub auth_secret: Option<String>,
-    /// Exact HTTP Host authorities accepted for MCP requests.
     pub allowed_hosts: BTreeSet<String>,
-    /// Browser origins explicitly permitted to call the Streamable HTTP endpoint.
     pub allowed_origins: BTreeSet<String>,
 }
 
 impl Config {
-    pub fn from_env_with_port(port_override: Option<u16>) -> anyhow::Result<Self> {
+    pub fn from_env_map(env: &EnvMap, port_override: Option<u16>) -> anyhow::Result<Self> {
         let port = match port_override {
             Some(port) => port,
-            None => std::env::var("PORT")
-                .ok()
-                .map(|value| value.parse().context("PORT must be a valid u16"))
+            None => value(env, "PORT")
+                .map(|raw| raw.parse().context("PORT must be a valid u16"))
                 .transpose()?
                 .unwrap_or(8080),
         };
 
-        let service_name =
-            std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "act-mcp-server".to_string());
+        let service_name = value(env, "OTEL_SERVICE_NAME")
+            .unwrap_or("act-mcp-server")
+            .to_owned();
 
-        let auth_secret = std::env::var("SERVER_AUTH_SECRET")
-            .ok()
-            .filter(|value| !value.is_empty())
+        // Secrets deliberately bypass `value`, which trims surrounding
+        // whitespace. Preserve the exact value so the existing secret-shape
+        // validator can continue rejecting whitespace and control characters.
+        let auth_secret = env
+            .get("SERVER_AUTH_SECRET")
+            .map(String::as_str)
+            .filter(|raw| !raw.is_empty())
+            .map(str::to_owned)
             .map(validate_auth_secret)
             .transpose()?;
 
-        let allowed_hosts = parse_allowed_hosts(
-            &std::env::var("MCP_ALLOWED_HOSTS")
-                .unwrap_or_else(|_| DEFAULT_ALLOWED_HOSTS.to_owned()),
-        )?;
+        let allowed_hosts =
+            parse_allowed_hosts(value(env, "MCP_ALLOWED_HOSTS").unwrap_or(DEFAULT_ALLOWED_HOSTS))?;
         let allowed_origins =
-            parse_allowed_origins(&std::env::var("MCP_ALLOWED_ORIGINS").unwrap_or_default())?;
+            parse_allowed_origins(value(env, "MCP_ALLOWED_ORIGINS").unwrap_or_default())?;
 
         Ok(Self {
             port,
@@ -144,9 +146,13 @@ fn parse_allowed_origins(raw: &str) -> anyhow::Result<BTreeSet<String>> {
 mod tests {
     use super::*;
 
+    fn base_env() -> EnvMap {
+        EnvMap::from([("MCP_ALLOWED_HOSTS".into(), "localhost:8080".into())])
+    }
+
     #[test]
-    fn explicit_port_override_wins_without_exposing_secrets() {
-        let config = Config::from_env_with_port(Some(9191)).expect("valid configuration");
+    fn explicit_port_override_wins_without_process_reads() {
+        let config = Config::from_env_map(&base_env(), Some(9191)).expect("valid configuration");
         assert_eq!(config.port, 9191);
     }
 
@@ -160,6 +166,16 @@ mod tests {
         ] {
             assert!(validate_auth_secret(bad).is_err());
         }
+    }
+
+    #[test]
+    fn env_map_does_not_trim_secret_before_validation() {
+        let mut env = base_env();
+        env.insert(
+            "SERVER_AUTH_SECRET".into(),
+            format!(" {} ", "a".repeat(MIN_AUTH_SECRET_BYTES)),
+        );
+        assert!(Config::from_env_map(&env, Some(8080)).is_err());
     }
 
     #[test]
