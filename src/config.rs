@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use anyhow::{Context, bail};
 use axum::http::{Uri, uri::Authority};
 
-use crate::env_map::{value, EnvMap};
+use crate::env_map::{EnvMap, value};
 
 const MIN_AUTH_SECRET_BYTES: usize = 24;
 const MAX_AUTH_SECRET_BYTES: usize = 4 * 1024;
@@ -35,17 +35,21 @@ impl Config {
             .unwrap_or("act-mcp-server")
             .to_owned();
 
-        let auth_secret = value(env, "SERVER_AUTH_SECRET")
+        // Secrets deliberately bypass `value`, which trims surrounding
+        // whitespace. Preserve the exact value so the existing secret-shape
+        // validator can continue rejecting whitespace and control characters.
+        let auth_secret = env
+            .get("SERVER_AUTH_SECRET")
+            .map(String::as_str)
+            .filter(|raw| !raw.is_empty())
             .map(str::to_owned)
             .map(validate_auth_secret)
             .transpose()?;
 
-        let allowed_hosts = parse_allowed_hosts(
-            value(env, "MCP_ALLOWED_HOSTS").unwrap_or(DEFAULT_ALLOWED_HOSTS),
-        )?;
-        let allowed_origins = parse_allowed_origins(
-            value(env, "MCP_ALLOWED_ORIGINS").unwrap_or_default(),
-        )?;
+        let allowed_hosts =
+            parse_allowed_hosts(value(env, "MCP_ALLOWED_HOSTS").unwrap_or(DEFAULT_ALLOWED_HOSTS))?;
+        let allowed_origins =
+            parse_allowed_origins(value(env, "MCP_ALLOWED_ORIGINS").unwrap_or_default())?;
 
         Ok(Self {
             port,
@@ -84,7 +88,11 @@ pub(crate) fn normalize_host(raw: &str) -> Option<String> {
 
 fn parse_allowed_hosts(raw: &str) -> anyhow::Result<BTreeSet<String>> {
     let mut hosts = BTreeSet::new();
-    for candidate in raw.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for candidate in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if candidate == "*" {
             bail!("MCP_ALLOWED_HOSTS must not contain '*'");
         }
@@ -116,7 +124,11 @@ pub(crate) fn normalize_origin(raw: &str) -> Option<String> {
 
 fn parse_allowed_origins(raw: &str) -> anyhow::Result<BTreeSet<String>> {
     let mut origins = BTreeSet::new();
-    for candidate in raw.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for candidate in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if candidate == "*" {
             bail!("MCP_ALLOWED_ORIGINS must not contain '*'");
         }
@@ -157,6 +169,16 @@ mod tests {
     }
 
     #[test]
+    fn env_map_does_not_trim_secret_before_validation() {
+        let mut env = base_env();
+        env.insert(
+            "SERVER_AUTH_SECRET".into(),
+            format!(" {} ", "a".repeat(MIN_AUTH_SECRET_BYTES)),
+        );
+        assert!(Config::from_env_map(&env, Some(8080)).is_err());
+    }
+
+    #[test]
     fn hosts_are_exact_normalized_and_wildcards_fail_closed() {
         assert_eq!(
             parse_allowed_hosts("Console.Example:443, localhost:8080").expect("valid hosts"),
@@ -165,7 +187,12 @@ mod tests {
                 "localhost:8080".to_owned(),
             ])
         );
-        for bad in ["*", "https://console.example", "user@console.example", "a b"] {
+        for bad in [
+            "*",
+            "https://console.example",
+            "user@console.example",
+            "a b",
+        ] {
             assert!(parse_allowed_hosts(bad).is_err(), "should reject {bad:?}");
         }
     }

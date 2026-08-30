@@ -9,7 +9,7 @@ use std::{
 use flags2env::BundledFlags2Env;
 use tracing_subscriber::EnvFilter;
 
-use crate::env_map::{merge_env, value, EnvMap};
+use crate::env_map::{EnvMap, merge_env, value};
 
 const DEFAULT_PORT: u16 = 8080;
 const DEFAULT_LOG_FILTER: &str = "info,act_mcp_server=debug";
@@ -25,10 +25,7 @@ fn invalid_input(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message.into())
 }
 
-pub fn parse_cli_overrides(
-    argv: &[String],
-    config_path: &Path,
-) -> Result<EnvMap, Box<dyn Error>> {
+pub fn parse_cli_overrides(argv: &[String], config_path: &Path) -> Result<EnvMap, Box<dyn Error>> {
     let config_path = config_path
         .to_str()
         .ok_or_else(|| invalid_input(".cli-flags.toml path is not valid UTF-8"))?;
@@ -93,6 +90,16 @@ pub fn startup_from(
     })
 }
 
+/// Compatibility entrypoint for callers and static contract checks that parse
+/// CLI-only startup settings. Process environment participation is explicit in
+/// `process_startup_flags`.
+pub fn parse_cli_flags(
+    argv: &[String],
+    config_path: &Path,
+) -> Result<StartupFlags, Box<dyn Error>> {
+    startup_from(EnvMap::new(), argv, config_path)
+}
+
 pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
     if let Some(path) = std::env::var_os("ACT_MCP_FLAGS_CONFIG").filter(|value| !value.is_empty()) {
         let path = PathBuf::from(path);
@@ -152,6 +159,13 @@ mod tests {
         assert_eq!(startup.port, 9090);
         assert!(startup.log_filter.to_string().contains("debug"));
         assert_eq!(value(&startup.env, "PORT"), Some("9090"));
+    }
+
+    #[test]
+    fn compatibility_parser_remains_cli_only() {
+        let argv = vec!["act-mcp-server".to_owned(), "--port=9090".to_owned()];
+        let startup = parse_cli_flags(&argv, &config_path()).expect("valid flags");
+        assert_eq!(startup.port, 9090);
     }
 
     #[test]
