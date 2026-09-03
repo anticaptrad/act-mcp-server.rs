@@ -1,0 +1,77 @@
+name: Generated contract policy
+
+on:
+  pull_request:
+    paths:
+      - "generated/**"
+      - "contracts/**"
+      - ".cli-flags.toml"
+      - ".github/workflows/generated-policy.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "generated/**"
+      - "contracts/**"
+      - ".cli-flags.toml"
+      - ".github/workflows/generated-policy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  generated-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate generated output policy
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          test -d generated || { echo "::error::generated/ is missing"; exit 1; }
+          test -f generated/readme.md || { echo "::error::generated/readme.md is required"; exit 1; }
+
+          bad_modes="$(git ls-files --stage generated | awk '$1 != "100644" {print}')"
+          if [[ -n "$bad_modes" ]]; then
+            echo "::error::generated files must be regular, non-executable Git entries (100644)"
+            printf '%s\n' "$bad_modes"
+            exit 1
+          fi
+
+          chmod -R a-w generated
+          if find generated -perm /222 -print -quit | grep -q .; then
+            echo "::error::failed to make generated/ read-only in this checkout"
+            exit 1
+          fi
+
+          if [[ -z "${BASE_SHA:-}" ]]; then exit 0; fi
+
+          mapfile -t changed < <(git diff --name-only "${BASE_SHA}...HEAD")
+          generated_changed="$(printf '%s\n' "${changed[@]}" | grep -E '^generated/' | grep -Ev '^generated/(readme|README)\.md$' || true)"
+          if [[ -z "$generated_changed" ]]; then exit 0; fi
+
+          typespec_changed="$(printf '%s\n' "${changed[@]}" | grep -E '^contracts/typespec/.*\.tsp$' || true)"
+          json_changed="$(printf '%s\n' "${changed[@]}" | grep -E '^contracts/(json-schema|openapi)/.*\.(json|ya?ml)$' || true)"
+          parity_changed="$(printf '%s\n' "${changed[@]}" | grep -E '^contracts/parity/.*\.json$' || true)"
+
+          if [[ -z "$typespec_changed" ]]; then
+            echo "::error::generated changes require a human-authored TypeSpec authority change under contracts/typespec/"
+            exit 1
+          fi
+          if [[ -z "$json_changed" ]]; then
+            echo "::error::generated changes require a peer JSON Schema/OpenAPI authority change under contracts/json-schema/ or contracts/openapi/"
+            exit 1
+          fi
+          if [[ -z "$parity_changed" ]]; then
+            echo "::error::generated changes require a machine-readable parity receipt under contracts/parity/"
+            exit 1
+          fi
+
+          printf 'Generated files changed:\n%s\n' "$generated_changed"
+          echo "Peer-authority inputs and reconciliation evidence changed in the same pull request."
