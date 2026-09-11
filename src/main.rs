@@ -3,6 +3,11 @@
 //! Exposes an HTTP JSON-RPC MCP endpoint plus k8s health/readiness probes.
 //! Deployed to the cluster at ~/codes/ores/k8s-cluster.
 
+#[path = "../generated/rust/env.rs"]
+mod env;
+#[path = "../generated/rust/runtime.rs"]
+mod env_runtime;
+
 mod auth;
 mod config;
 mod mcp;
