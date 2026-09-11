@@ -9,11 +9,14 @@ use std::{
 use flags2env::BundledFlags2Env;
 use tracing_subscriber::EnvFilter;
 
+use crate::env_map::{EnvMap, merge_env, value};
+
 const DEFAULT_PORT: u16 = 8080;
 const DEFAULT_LOG_FILTER: &str = "info,act_mcp_server=debug";
 
 #[derive(Debug)]
 pub struct StartupFlags {
+    pub env: EnvMap,
     pub port: u16,
     pub log_filter: EnvFilter,
 }
@@ -22,10 +25,7 @@ fn invalid_input(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message.into())
 }
 
-pub fn parse_cli_flags(
-    argv: &[String],
-    config_path: &Path,
-) -> Result<StartupFlags, Box<dyn Error>> {
+pub fn parse_cli_overrides(argv: &[String], config_path: &Path) -> Result<EnvMap, Box<dyn Error>> {
     let config_path = config_path
         .to_str()
         .ok_or_else(|| invalid_input(".cli-flags.toml path is not valid UTF-8"))?;
@@ -59,31 +59,45 @@ pub fn parse_cli_flags(
         .into());
     }
 
-    let port = parsed
-        .flags
-        .get("PORT")
-        .map(String::as_str)
-        .unwrap_or("")
-        .trim();
-    let port = if port.is_empty() {
-        DEFAULT_PORT
-    } else {
-        port.parse::<u16>()
-            .map_err(|_| invalid_input("--port must be an integer between 1 and 65535"))?
+    Ok(parsed.flags.into_iter().collect())
+}
+
+pub fn startup_from(
+    initial: EnvMap,
+    argv: &[String],
+    config_path: &Path,
+) -> Result<StartupFlags, Box<dyn Error>> {
+    let env = merge_env(initial, parse_cli_overrides(argv, config_path)?);
+
+    let port = match value(&env, "PORT") {
+        None => DEFAULT_PORT,
+        Some(raw) => raw
+            .parse::<u16>()
+            .map_err(|_| invalid_input("--port must be an integer between 1 and 65535"))?,
     };
     if port == 0 {
         return Err(invalid_input("--port must be between 1 and 65535").into());
     }
 
-    let filter = parsed
-        .flags
-        .get("RUST_LOG")
-        .map(String::as_str)
-        .unwrap_or(DEFAULT_LOG_FILTER);
+    let filter = value(&env, "RUST_LOG").unwrap_or(DEFAULT_LOG_FILTER);
     let log_filter = EnvFilter::try_new(filter)
         .map_err(|error| invalid_input(format!("invalid --log-filter value: {error}")))?;
 
-    Ok(StartupFlags { port, log_filter })
+    Ok(StartupFlags {
+        env,
+        port,
+        log_filter,
+    })
+}
+
+/// Compatibility entrypoint for callers and static contract checks that parse
+/// CLI-only startup settings. Process environment participation is explicit in
+/// `process_startup_flags`.
+pub fn parse_cli_flags(
+    argv: &[String],
+    config_path: &Path,
+) -> Result<StartupFlags, Box<dyn Error>> {
+    startup_from(EnvMap::new(), argv, config_path)
 }
 
 pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
@@ -117,8 +131,9 @@ pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
 
 pub fn process_startup_flags() -> Result<StartupFlags, Box<dyn Error>> {
     let argv = std::env::args().collect::<Vec<_>>();
+    let initial = std::env::vars().collect::<EnvMap>();
     let config_path = resolve_config_path()?;
-    parse_cli_flags(&argv, &config_path)
+    startup_from(initial, &argv, &config_path)
 }
 
 #[cfg(test)]
@@ -130,38 +145,60 @@ mod tests {
     }
 
     #[test]
-    fn accepts_declared_operational_flags() {
+    fn cli_values_override_the_environment_snapshot() {
+        let initial = EnvMap::from([
+            ("PORT".into(), "8080".into()),
+            ("RUST_LOG".into(), "info".into()),
+        ]);
         let argv = vec![
             "act-mcp-server".to_owned(),
             "--port=9090".to_owned(),
             "--log-filter=debug,hyper=warn".to_owned(),
         ];
-        let flags = parse_cli_flags(&argv, &config_path()).expect("valid operational flags");
-        assert_eq!(flags.port, 9090);
-        assert!(flags.log_filter.to_string().contains("debug"));
+        let startup = startup_from(initial, &argv, &config_path()).expect("valid flags");
+        assert_eq!(startup.port, 9090);
+        assert!(startup.log_filter.to_string().contains("debug"));
+        assert_eq!(value(&startup.env, "PORT"), Some("9090"));
     }
 
     #[test]
-    fn rejects_secret_bearing_flags() {
+    fn compatibility_parser_remains_cli_only() {
+        let argv = vec!["act-mcp-server".to_owned(), "--port=9090".to_owned()];
+        let startup = parse_cli_flags(&argv, &config_path()).expect("valid flags");
+        assert_eq!(startup.port, 9090);
+    }
+
+    #[test]
+    fn rejects_secret_bearing_flags_without_process_mutation() {
+        let before = std::env::var_os("ACT_ENV_MAP_PROBE");
         let argv = vec![
             "act-mcp-server".to_owned(),
             "--server-auth-secret=must-remain-environment-only".to_owned(),
         ];
-        let error = parse_cli_flags(&argv, &config_path())
-            .expect_err("secret-bearing option must remain unknown")
+        let error = startup_from(EnvMap::new(), &argv, &config_path())
+            .expect_err("undeclared option must remain unknown")
             .to_string();
         assert!(error.contains("unknown command-line option"));
+        assert_eq!(std::env::var_os("ACT_ENV_MAP_PROBE"), before);
     }
 
     #[test]
     fn rejects_invalid_values() {
         let zero_port = vec!["act-mcp-server".to_owned(), "--port=0".to_owned()];
-        assert!(parse_cli_flags(&zero_port, &config_path()).is_err());
+        assert!(startup_from(EnvMap::new(), &zero_port, &config_path()).is_err());
 
         let bad_filter = vec![
             "act-mcp-server".to_owned(),
             "--log-filter=[invalid".to_owned(),
         ];
-        assert!(parse_cli_flags(&bad_filter, &config_path()).is_err());
+        assert!(startup_from(EnvMap::new(), &bad_filter, &config_path()).is_err());
+    }
+
+    #[test]
+    fn production_source_never_writes_process_environment() {
+        const SOURCE: &str = include_str!("startup.rs");
+        let production = SOURCE.split("#[cfg(test)]").next().unwrap_or(SOURCE);
+        assert!(!production.contains("std::env::set_var"));
+        assert!(!production.contains("env::set_var"));
     }
 }

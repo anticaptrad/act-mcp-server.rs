@@ -10,6 +10,7 @@ mod env_runtime;
 
 mod auth;
 mod config;
+mod env_map;
 mod mcp;
 mod routes;
 mod startup;
@@ -23,7 +24,7 @@ use tokio::signal;
 async fn main() -> anyhow::Result<()> {
     let startup =
         startup::process_startup_flags().map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    let cfg = config::Config::from_env_with_port(Some(startup.port))?;
+    let cfg = config::Config::from_env_map(&startup.env, Some(startup.port))?;
     telemetry::init(&cfg.service_name, startup.log_filter)?;
 
     if cfg.auth_secret.is_none() {
