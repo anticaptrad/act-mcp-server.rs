@@ -64,7 +64,11 @@ pub fn record_tool_call(tool_class: &'static str, outcome: &'static str, elapsed
         .record(elapsed.as_secs_f64() * 1_000.0, &attributes);
 }
 
-pub fn init(service_name: &str, filter: EnvFilter) -> anyhow::Result<()> {
+pub fn init(
+    service_name: &str,
+    filter: EnvFilter,
+    env: &crate::env_map::EnvMap,
+) -> anyhow::Result<()> {
     let registry = tracing_subscriber::registry().with(filter).with(
         tracing_subscriber::fmt::layer()
             .json()
@@ -73,8 +77,8 @@ pub fn init(service_name: &str, filter: EnvFilter) -> anyhow::Result<()> {
             .with_writer(std::io::stderr),
     );
 
-    match std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
-        Ok(endpoint) if !endpoint.is_empty() => {
+    match crate::env_map::env_value(env, "OTEL_EXPORTER_OTLP_ENDPOINT") {
+        Some(endpoint) => {
             let endpoint = sanitize_otlp_endpoint(&endpoint)?;
             let span_exporter = opentelemetry_otlp::SpanExporter::builder()
                 .with_tonic()

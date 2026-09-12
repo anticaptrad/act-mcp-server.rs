@@ -7,6 +7,8 @@ use std::{
 };
 
 use flags2env::BundledFlags2Env;
+
+use crate::env_map::{EnvMap, env_value, get_env_map, process_argv, process_env_map};
 use tracing_subscriber::EnvFilter;
 
 const DEFAULT_PORT: u16 = 8080;
@@ -14,12 +16,18 @@ const DEFAULT_LOG_FILTER: &str = "info,act_mcp_server=debug";
 
 #[derive(Debug)]
 pub struct StartupFlags {
+    pub env: EnvMap,
     pub port: u16,
     pub log_filter: EnvFilter,
 }
 
 fn invalid_input(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message.into())
+}
+
+fn argv_has_flag(argv: &[String], name: &str) -> bool {
+    argv.iter()
+        .any(|arg| arg == name || arg.starts_with(&format!("{name}=")))
 }
 
 pub fn parse_cli_flags(
@@ -59,12 +67,29 @@ pub fn parse_cli_flags(
         .into());
     }
 
-    let port = parsed
-        .flags
-        .get("PORT")
-        .map(String::as_str)
-        .unwrap_or("")
-        .trim();
+    let mut overrides = crate::env_map::EnvMap::new();
+    if argv_has_flag(argv, "--port") || argv_has_flag(argv, "-p") {
+        if let Some(value) = parsed.flags.get("PORT") {
+            overrides.insert("PORT".into(), value.clone());
+        }
+    }
+    if argv_has_flag(argv, "--log-filter") {
+        if let Some(value) = parsed.flags.get("RUST_LOG") {
+            overrides.insert("RUST_LOG".into(), value.clone());
+        }
+    }
+    if argv_has_flag(argv, "--allowed-hosts") {
+        if let Some(value) = parsed.flags.get("MCP_ALLOWED_HOSTS") {
+            overrides.insert("MCP_ALLOWED_HOSTS".into(), value.clone());
+        }
+    }
+    if argv_has_flag(argv, "--allowed-origins") {
+        if let Some(value) = parsed.flags.get("MCP_ALLOWED_ORIGINS") {
+            overrides.insert("MCP_ALLOWED_ORIGINS".into(), value.clone());
+        }
+    }
+    let env = get_env_map(process_env_map(), overrides);
+    let port = env_value(&env, "PORT").unwrap_or("");
     let port = if port.is_empty() {
         DEFAULT_PORT
     } else {
@@ -75,15 +100,15 @@ pub fn parse_cli_flags(
         return Err(invalid_input("--port must be between 1 and 65535").into());
     }
 
-    let filter = parsed
-        .flags
-        .get("RUST_LOG")
-        .map(String::as_str)
-        .unwrap_or(DEFAULT_LOG_FILTER);
+    let filter = env_value(&env, "RUST_LOG").unwrap_or(DEFAULT_LOG_FILTER);
     let log_filter = EnvFilter::try_new(filter)
         .map_err(|error| invalid_input(format!("invalid --log-filter value: {error}")))?;
 
-    Ok(StartupFlags { port, log_filter })
+    Ok(StartupFlags {
+        env,
+        port,
+        log_filter,
+    })
 }
 
 pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
@@ -116,7 +141,7 @@ pub fn resolve_config_path() -> Result<PathBuf, Box<dyn Error>> {
 }
 
 pub fn process_startup_flags() -> Result<StartupFlags, Box<dyn Error>> {
-    let argv = std::env::args().collect::<Vec<_>>();
+    let argv = process_argv();
     let config_path = resolve_config_path()?;
     parse_cli_flags(&argv, &config_path)
 }
@@ -163,5 +188,21 @@ mod tests {
             "--log-filter=[invalid".to_owned(),
         ];
         assert!(parse_cli_flags(&bad_filter, &config_path()).is_err());
+    }
+
+    #[test]
+    fn parse_failure_does_not_mutate_process_environment() {
+        let before = std::env::var_os("PORT");
+        let argv = vec![
+            "act-mcp-server".to_owned(),
+            "--this-flag-is-not-declared".to_owned(),
+        ];
+        assert!(parse_cli_flags(&argv, &config_path()).is_err());
+        assert_eq!(std::env::var_os("PORT"), before);
+
+        const SRC: &str = include_str!("startup.rs");
+        let production = SRC.split("#[cfg(test)]").next().unwrap_or(SRC);
+        assert!(!production.contains("std::env::set_var"));
+        assert!(!production.contains("env::set_var"));
     }
 }
