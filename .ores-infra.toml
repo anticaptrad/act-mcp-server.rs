@@ -1,28 +1,71 @@
-# Cloud connectors for anticaptrad/act-mcp-server.rs.
+# Cloud and SaaS connectors for anticaptrad/act-mcp-server.rs.
 #
-# Values are copied from anticaptrad's infra-isolation contract, which is the
-# authority for which account/org/domain this repository talks to. An empty
-# value means the fact is not recorded on disk; it is left blank deliberately
-# rather than guessed, because a wrong account reference is worse than a
-# missing one.
+# A connector is declared by the ENVIRONMENT VARIABLE NAMES its SDK reads, not
+# by any credential or account value. Define the env and the connector is live;
+# nothing here needs editing per deploy. Secrets never appear in this file.
+#
+# Non-secret identifiers below (org slugs, domain, Slack channel, Linear
+# project) come from anticaptrad's infra-isolation contract where recorded. An empty
+# identifier means it is not recorded on disk, not that the connector is
+# unavailable — the env vars still drive it.
 schema_version = 1
 contract = "provider-sync-adapters-v1"
 github_org = "anticaptrad"
 
 [connectors.aws]
-# No AWS account id exists anywhere in the fleet checkout; the only 12-digit
-# values found are AWS's own 123456789012 documentation placeholder.
-account_id = ""
-region = ""
+enabled = true
+sdk = "aws-sdk-rust"
+# Standard AWS chain: static keys, SSO/role, or IMDS all resolve from these.
+env = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_REGION", "AWS_ROLE_ARN", "AWS_ENDPOINT_URL"]
+region_env = "AWS_REGION"
 
 [connectors.gcp]
-project = "" # unset: not recorded in any infra-isolation contract for anticaptrad
+enabled = true
+sdk = "google-cloud-rust"
+env = ["GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT"]
+project = ""
+project_env = "GOOGLE_CLOUD_PROJECT"
 
 [connectors.neon]
-org = "" # unset: not recorded in any infra-isolation contract for anticaptrad
+enabled = true
+env = ["NEON_API_KEY", "NEON_DATABASE_URL"]
+org = ""
 
 [connectors.cloudflare]
-domain = "" # unset: not recorded in any infra-isolation contract for anticaptrad
+enabled = true
+env = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_ZONE_ID"]
+domain = ""
 
 [connectors.supabase]
-org = "" # unset: not recorded in any infra-isolation contract for anticaptrad
+enabled = true
+env = ["SUPABASE_URL", "SUPABASE_PROJECT_REF", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"]
+org = ""
+
+[connectors.linear]
+enabled = true
+env = ["LINEAR_API_KEY", "LINEAR_TEAM_KEY"]
+project = ""
+
+[connectors.slack]
+enabled = true
+env = ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_APP_TOKEN"]
+channel = ""
+
+[connectors.make]
+enabled = true
+# No MAKE_* convention existed in the fleet; these names are introduced here.
+env = ["MAKE_API_TOKEN", "MAKE_TEAM_ID", "MAKE_WEBHOOK_URL"]
+
+[connectors.google_apps_script]
+enabled = true
+# No APPS_SCRIPT_* convention existed in the fleet; introduced here.
+env = ["GOOGLE_APPS_SCRIPT_ID", "GOOGLE_APPS_SCRIPT_DEPLOYMENT_ID", "GOOGLE_APPLICATION_CREDENTIALS"]
+
+[connectors.google_chat]
+enabled = true
+env = ["GOOGLE_CHAT_SPACE_ID", "GOOGLE_CHAT_IMPERSONATE_EMAIL", "GOOGLE_APPLICATION_CREDENTIALS"]
+
+[connectors.github]
+enabled = true
+env = ["GITHUB_TOKEN"]
+org = "anticaptrad"
