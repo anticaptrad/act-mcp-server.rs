@@ -1,0 +1,28 @@
+# Cloud connectors for anticaptrad/act-mcp-server.rs.
+#
+# Values are copied from anticaptrad's infra-isolation contract, which is the
+# authority for which account/org/domain this repository talks to. An empty
+# value means the fact is not recorded on disk; it is left blank deliberately
+# rather than guessed, because a wrong account reference is worse than a
+# missing one.
+schema_version = 1
+contract = "provider-sync-adapters-v1"
+github_org = "anticaptrad"
+
+[connectors.aws]
+# No AWS account id exists anywhere in the fleet checkout; the only 12-digit
+# values found are AWS's own 123456789012 documentation placeholder.
+account_id = ""
+region = ""
+
+[connectors.gcp]
+project = "" # unset: not recorded in any infra-isolation contract for anticaptrad
+
+[connectors.neon]
+org = "" # unset: not recorded in any infra-isolation contract for anticaptrad
+
+[connectors.cloudflare]
+domain = "" # unset: not recorded in any infra-isolation contract for anticaptrad
+
+[connectors.supabase]
+org = "" # unset: not recorded in any infra-isolation contract for anticaptrad
