@@ -1,10 +1,10 @@
 schema_version: ores.compose.v1
-project: act-mcp-server.rs
+project: act-mcp-server
 allow_lazy_start: false
 
 services:
-  act-mcp-server.rs:
-    name: act-mcp-server.rs
+  act-mcp-server:
+    name: act-mcp-server
     runtime: host
     build:
       - ["cargo", "build", "--bins"]
