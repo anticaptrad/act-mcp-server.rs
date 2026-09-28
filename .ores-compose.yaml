@@ -1,0 +1,11 @@
+schema_version: ores.compose.v1
+project: act-mcp-server
+allow_lazy_start: false
+
+services:
+  act-mcp-server:
+    name: act-mcp-server
+    runtime: host
+    build:
+      - ["cargo", "build", "--bins"]
+    command: ["./target/debug/act-mcp-server.rs"]
